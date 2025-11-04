@@ -21,6 +21,8 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/teams', require('./routes/teamRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use("/api/payments", require("./routes/payments"));
+
 
 // Health check route
 app.get('/api/health', (req, res) => {

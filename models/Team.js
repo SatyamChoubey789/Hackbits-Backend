@@ -38,18 +38,45 @@ const teamSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    paymentScreenshot: {
-      type: String, // Cloudinary URL to the uploaded payment screenshot
-      default: null,
-    },
-    paymentScreenshotCloudinaryId: {
-      type: String, // Cloudinary public ID for easy deletion
-      default: null,
-    },
+    // Payment related fields
     paymentStatus: {
       type: String,
       enum: ["pending", "verified", "rejected"],
       default: "pending",
+    },
+    paymentAmount: {
+      type: Number, // Amount in paise
+      default: null,
+    },
+    razorpayOrderId: {
+      type: String,
+      default: null,
+    },
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
+    razorpaySignature: {
+      type: String,
+      default: null,
+    },
+    paymentVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    // QR Code
+    qrCode: {
+      type: String, // Base64 encoded QR code data URL
+      default: null,
+    },
+    // Legacy payment screenshot fields (keep for backward compatibility)
+    paymentScreenshot: {
+      type: String,
+      default: null,
+    },
+    paymentScreenshotCloudinaryId: {
+      type: String,
+      default: null,
     },
   },
   {
