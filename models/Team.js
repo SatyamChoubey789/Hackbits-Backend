@@ -79,7 +79,36 @@ const teamSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
-  }
+  },checkedIn: {
+    type: Boolean,
+    default: false
+  },
+  checkInTime: {
+    type: Date
+  },
+  checkedInBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin'
+  },
+  checkInCount: {
+    type: Number,
+    default: 0
+  },
+  checkInHistory: [{
+    timestamp: {
+      type: Date,
+      default: Date.now
+    },
+    checkedInBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Admin'
+    },
+    method: {
+      type: String,
+      enum: ['qr_scan', 'manual_entry'],
+      default: 'qr_scan'
+    }
+  }]
 }, {
   timestamps: true
 });
