@@ -13,11 +13,11 @@ const {
 
 const router = express.Router();
 
-// Configure multer for memory storage (we'll upload directly to Cloudinary)
+// Configure multer for memory storage
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit (before compression)
+    fileSize: 10 * 1024 * 1024, // 10MB limit
   },
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith("image/")) {
@@ -29,7 +29,7 @@ const upload = multer({
 });
 
 // @route   POST /api/teams/register
-// @desc    Register a team
+// @desc    Register a team (Solo, Duo, or Squad)
 // @access  Private
 router.post("/register", authMiddleware, async (req, res) => {
   try {
@@ -38,11 +38,9 @@ router.post("/register", authMiddleware, async (req, res) => {
     // Check if team name already exists
     const existingTeamName = await Team.findOne({ teamName });
     if (existingTeamName) {
-      return res
-        .status(400)
-        .json({
-          message: "Team name already exists. Please choose a different name.",
-        });
+      return res.status(400).json({
+        message: "Team name already exists. Please choose a different name.",
+      });
     }
 
     // Check if user is already in a team
@@ -51,41 +49,50 @@ router.post("/register", authMiddleware, async (req, res) => {
     });
 
     if (existingTeam) {
-      return res
-        .status(400)
-        .json({ message: "You are already registered in a team" });
+      return res.status(400).json({ 
+        message: "You are already registered in a team" 
+      });
     }
 
-    // Validate team size: only "Solo" teams are allowed now
+    // Validate team size constraints
     const memberCount = members ? members.length : 0;
+    
     if (teamSize === "Solo" && memberCount > 0) {
-      return res
-        .status(400)
-        .json({ message: "Solo teams cannot have additional members" });
+      return res.status(400).json({ 
+        message: "Solo teams cannot have additional members" 
+      });
     }
     
+    if (teamSize === "Duo" && memberCount !== 1) {
+      return res.status(400).json({ 
+        message: "Duo teams must have exactly 1 additional member (2 total including leader)" 
+      });
+    }
+    
+    if (teamSize === "Team" && (memberCount < 2 || memberCount > 3)) {
+      return res.status(400).json({ 
+        message: "Squad teams must have 2-3 additional members (3-4 total including leader)" 
+      });
+    }
+
     // Verify all members exist and are not already in teams
     let memberUserIds = [];
     if (members && members.length > 0) {
-      // Find users by email and registrationNumber
-      const memberUsers = await User.find({
-        $or: members.map((member) => ({
+      // Find users by email AND registrationNumber (both must match)
+      for (const member of members) {
+        const memberUser = await User.findOne({
           email: member.email,
           registrationNumber: member.registrationNumber,
-        })),
-      });
+        });
 
-      if (memberUsers.length !== members.length) {
-        return res
-          .status(400)
-          .json({
-            message:
-              "One or more members not found. Please ensure all members are registered on the platform.",
+        if (!memberUser) {
+          return res.status(400).json({
+            message: `Member with email ${member.email} and registration number ${member.registrationNumber} not found. Please ensure all members are registered on the platform.`,
           });
-      }
+        }
 
-      // Extract user IDs for team creation
-      memberUserIds = memberUsers.map((user) => user._id);
+        memberUserIds.push(memberUser._id);
+      }
 
       // Check if any member is already in a team
       const membersInTeams = await Team.find({
@@ -96,9 +103,9 @@ router.post("/register", authMiddleware, async (req, res) => {
       });
 
       if (membersInTeams.length > 0) {
-        return res
-          .status(400)
-          .json({ message: "One or more members are already in a team" });
+        return res.status(400).json({ 
+          message: "One or more members are already in a team" 
+        });
       }
     }
 
@@ -120,8 +127,8 @@ router.post("/register", authMiddleware, async (req, res) => {
 
     // Populate team data for response
     const populatedTeam = await Team.findById(team._id)
-      .populate("leader", "name email registrationNumber")
-      .populate("members", "name email registrationNumber");
+      .populate("leader", "name email registrationNumber phone university")
+      .populate("members", "name email registrationNumber phone university");
 
     res.status(201).json({
       message: "Team registered successfully",
@@ -143,7 +150,6 @@ router.post("/register", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error during team registration" });
   }
 });
-
 
 // @route   GET /api/teams
 // @desc    Get all teams
@@ -170,8 +176,8 @@ router.get("/my-team", authMiddleware, async (req, res) => {
     const team = await Team.findOne({
       $or: [{ leader: req.user._id }, { members: req.user._id }],
     })
-      .populate("leader", "name email registrationNumber")
-      .populate("members", "name email registrationNumber");
+      .populate("leader", "name email registrationNumber phone university")
+      .populate("members", "name email registrationNumber phone university");
 
     if (!team) {
       return res.status(404).json({ message: "No team found" });
@@ -199,14 +205,13 @@ router.get("/problem-statements", (req, res) => {
     "Cybersecurity Threat Detection System",
     "Social Impact Measurement Tool",
     "Digital Healthcare Management System",
-    
   ];
 
   res.json({ problemStatements });
 });
 
 // @route   POST /api/teams/upload-payment
-// @desc    Upload payment screenshot for a team (compressed and uploaded to Cloudinary)
+// @desc    Upload payment screenshot for a team
 // @access  Private
 router.post(
   "/upload-payment",
@@ -227,9 +232,9 @@ router.post(
       });
 
       if (!team) {
-        return res
-          .status(404)
-          .json({ message: "Team not found or you are not authorized" });
+        return res.status(404).json({ 
+          message: "Team not found or you are not authorized" 
+        });
       }
 
       // Delete old payment screenshot from Cloudinary if exists
@@ -241,9 +246,9 @@ router.post(
       const uploadResult = await compressAndUploadImage(req.file, teamId);
 
       if (!uploadResult.success) {
-        return res
-          .status(500)
-          .json({ message: "Failed to process and upload image" });
+        return res.status(500).json({ 
+          message: "Failed to process and upload image" 
+        });
       }
 
       // Update team with new payment screenshot details
@@ -266,8 +271,7 @@ router.post(
       console.error("Payment upload error:", error);
       res.status(500).json({
         message: "Server error during payment upload",
-        error:
-          process.env.NODE_ENV === "development" ? error.message : undefined,
+        error: process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
   }
