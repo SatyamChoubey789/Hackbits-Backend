@@ -21,10 +21,6 @@ const teamSchema = new mongoose.Schema({
     enum: ['Solo', 'Duo', 'Team'],
     required: true
   },
-  problemStatement: {
-    type: String,
-    // Not required anymore
-  },
   registrationNumber: {
     type: String,
     required: true,
