@@ -2,10 +2,10 @@ const nodemailer = require('nodemailer');
 
 // Create transporter
 const transporter = nodemailer.createTransport({
-  service: 'gmail', // or your email service
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD, // Use App Password for Gmail
+    pass: process.env.EMAIL_PASSWORD,
   },
 });
 
@@ -86,7 +86,7 @@ const emailTemplates = {
           </div>
           <div class="footer">
             <p>This is an automated email. Please do not reply to this message.</p>
-            <p>&copy; ${new Date().getFullYear()} Hackathon. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Hackbits Team. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -158,14 +158,14 @@ const emailTemplates = {
 
             <div class="qr-container">
               <h3 style="color: #11998e; margin-top: 0;">Your Event Entry QR Code</h3>
-              <img src="${teamData.qrCode}" alt="Team QR Code" class="qr-code" />
+              <img src="cid:qrcode" alt="Team QR Code" class="qr-code" />
               <p style="margin-top: 20px; color: #666;">Save this QR code for event entry</p>
             </div>
 
             <div class="important-box">
               <h3 style="margin-top: 0; color: #856404;">⚠️ Important Instructions</h3>
               <ul style="margin: 10px 0; padding-left: 20px;">
-                <li><strong>Save this QR code</strong> - Download it to your phone</li>
+                <li><strong>Save this QR code</strong> - Download the attached image</li>
                 <li><strong>Print it out</strong> - Keep a physical copy as backup</li>
                 <li><strong>Don't share</strong> - This QR code is unique to your team</li>
                 <li><strong>Bring to event</strong> - Present it at the registration desk</li>
@@ -174,7 +174,7 @@ const emailTemplates = {
 
             <div class="instructions">
               <h3 style="margin-top: 0; color: #0277bd;">📱 How to Use Your QR Code</h3>
-              <div class="instruction-item">Save this email or download the QR code image</div>
+              <div class="instruction-item">Download the attached QR code image</div>
               <div class="instruction-item">Keep it on your phone for easy access</div>
               <div class="instruction-item">Present it at the event registration desk</div>
               <div class="instruction-item">Our team will scan it for instant check-in</div>
@@ -201,12 +201,19 @@ const emailTemplates = {
           <div class="footer">
             <p>This is an automated email. Please do not reply to this message.</p>
             <p>For support, contact us at ${process.env.SUPPORT_EMAIL || 'support@hackathon.com'}</p>
-            <p>&copy; ${new Date().getFullYear()} Hackathon. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Hackbits Team. All rights reserved.</p>
           </div>
         </div>
       </body>
       </html>
     `,
+    // Add attachments array for QR code
+    attachments: teamData.qrCode ? [{
+      filename: `QR-${teamData.registrationNumber}.png`,
+      content: teamData.qrCode.split('base64,')[1],
+      encoding: 'base64',
+      cid: 'qrcode' // Content-ID for inline image
+    }] : []
   }),
 
   // Payment rejection email
@@ -266,7 +273,7 @@ const emailTemplates = {
           </div>
           <div class="footer">
             <p>For support: ${process.env.SUPPORT_EMAIL || 'support@hackathon.com'}</p>
-            <p>&copy; ${new Date().getFullYear()} Hackathon. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Hackbits Team. All rights reserved.</p>
           </div>
         </div>
       </body>
@@ -286,6 +293,11 @@ const sendEmail = async (to, template, data) => {
       subject: emailContent.subject,
       html: emailContent.html,
     };
+
+    // Add attachments if present (for QR code)
+    if (emailContent.attachments) {
+      mailOptions.attachments = emailContent.attachments;
+    }
 
     const info = await transporter.sendMail(mailOptions);
     console.log('Email sent successfully:', info.messageId);
