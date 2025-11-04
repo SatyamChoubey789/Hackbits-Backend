@@ -1,7 +1,6 @@
 const express = require("express");
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
-const QRCode = require("qrcode");
 const Team = require("../models/Team");
 const authMiddleware = require("../middleware/authMiddleware");
 
@@ -86,7 +85,7 @@ router.post("/create-order", authMiddleware, async (req, res) => {
 });
 
 // @route   POST /api/payment/verify-payment
-// @desc    Verify Razorpay payment and generate QR code
+// @desc    Verify Razorpay payment (DO NOT generate QR yet)
 // @access  Private
 router.post("/verify-payment", authMiddleware, async (req, res) => {
   try {
@@ -101,8 +100,7 @@ router.post("/verify-payment", authMiddleware, async (req, res) => {
     const team = await Team.findOne({
       _id: teamId,
       $or: [{ leader: req.user._id }, { members: req.user._id }],
-    }).populate("leader", "name email registrationNumber")
-      .populate("members", "name email registrationNumber");
+    }).populate("leader", "name email registrationNumber");
 
     if (!team) {
       return res.status(404).json({
@@ -131,53 +129,17 @@ router.post("/verify-payment", authMiddleware, async (req, res) => {
       });
     }
 
-    // Generate QR Code data
-    const qrData = {
-      teamName: team.teamName,
-      registrationNumber: team.registrationNumber,
-      teamSize: team.teamSize,
-      leader: {
-        name: team.leader.name,
-        email: team.leader.email,
-        registrationNumber: team.leader.registrationNumber,
-      },
-      members: team.members.map((member) => ({
-        name: member.name,
-        email: member.email,
-        registrationNumber: member.registrationNumber,
-      })),
-      problemStatement: team.problemStatement,
-      paymentId: razorpay_payment_id,
-      amount: payment.amount / 100,
-      verifiedAt: new Date().toISOString(),
-    };
-
-    // Generate QR code as data URL
-    const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
-      errorCorrectionLevel: "H",
-      type: "image/png",
-      quality: 0.95,
-      margin: 1,
-      width: 400,
-      color: {
-        dark: "#000000",
-        light: "#FFFFFF",
-      },
-    });
-
-    // Update team with payment details
-    team.paymentStatus = "verified";
+    // Update team with payment details (but keep status as pending)
     team.razorpayPaymentId = razorpay_payment_id;
     team.razorpaySignature = razorpay_signature;
-    team.paymentVerifiedAt = new Date();
-    team.qrCode = qrCodeDataUrl;
+    team.paymentCompletedAt = new Date();
+    team.paymentStatus = "pending"; // Keep as pending until documents uploaded and admin verifies
     await team.save();
 
     res.json({
-      message: "Payment verified successfully",
+      message: "Payment verified successfully. Now upload your documents for verification.",
       paymentId: razorpay_payment_id,
       amount: payment.amount / 100,
-      qrCode: qrCodeDataUrl,
       team: {
         teamName: team.teamName,
         registrationNumber: team.registrationNumber,
@@ -189,41 +151,6 @@ router.post("/verify-payment", authMiddleware, async (req, res) => {
     res.status(500).json({
       message: "Failed to verify payment",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
-  }
-});
-
-// @route   GET /api/payment/team-qr/:teamId
-// @desc    Get team QR code
-// @access  Private
-router.get("/team-qr/:teamId", authMiddleware, async (req, res) => {
-  try {
-    const team = await Team.findOne({
-      _id: req.params.teamId,
-      $or: [{ leader: req.user._id }, { members: req.user._id }],
-    });
-
-    if (!team) {
-      return res.status(404).json({
-        message: "Team not found or you are not authorized",
-      });
-    }
-
-    if (!team.qrCode) {
-      return res.status(404).json({
-        message: "QR code not generated yet. Please complete payment first.",
-      });
-    }
-
-    res.json({
-      qrCode: team.qrCode,
-      teamName: team.teamName,
-      registrationNumber: team.registrationNumber,
-    });
-  } catch (error) {
-    console.error("Get QR code error:", error);
-    res.status(500).json({
-      message: "Failed to fetch QR code",
     });
   }
 });
@@ -248,7 +175,8 @@ router.get("/status/:teamId", authMiddleware, async (req, res) => {
       paymentStatus: team.paymentStatus,
       paymentAmount: team.paymentAmount ? team.paymentAmount / 100 : null,
       razorpayPaymentId: team.razorpayPaymentId || null,
-      paymentVerifiedAt: team.paymentVerifiedAt || null,
+      paymentCompletedAt: team.paymentCompletedAt || null,
+      documentsUploaded: !!(team.paymentScreenshot && team.idCard),
       hasQrCode: !!team.qrCode,
     });
   } catch (error) {

@@ -1,15 +1,13 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
 const Team = require("../models/Team");
 const User = require("../models/User");
 const authMiddleware = require("../middleware/authMiddleware");
 const {
   compressAndUploadImage,
   deleteImageFromCloudinary,
-  extractPublicIdFromUrl,
 } = require("../utils/imageUpload");
+const { sendTeamRegistrationEmail } = require("../utils/emailService");
 
 const router = express.Router();
 
@@ -29,11 +27,13 @@ const upload = multer({
 });
 
 // @route   POST /api/teams/register
-// @desc    Register a team (Solo, Duo, or Squad)
+// @desc    Register a solo team and send confirmation email
 // @access  Private
 router.post("/register", authMiddleware, async (req, res) => {
   try {
-    const { teamName, members, problemStatement, teamSize } = req.body;
+    const { teamName } = req.body;
+    const teamSize = "Solo";
+    const members = [];
 
     // Check if team name already exists
     const existingTeamName = await Team.findOne({ teamName });
@@ -49,64 +49,9 @@ router.post("/register", authMiddleware, async (req, res) => {
     });
 
     if (existingTeam) {
-      return res.status(400).json({ 
-        message: "You are already registered in a team" 
+      return res.status(400).json({
+        message: "You are already registered in a team",
       });
-    }
-
-    // Validate team size constraints
-    const memberCount = members ? members.length : 0;
-    
-    if (teamSize === "Solo" && memberCount > 0) {
-      return res.status(400).json({ 
-        message: "Solo teams cannot have additional members" 
-      });
-    }
-    
-    if (teamSize === "Duo" && memberCount !== 1) {
-      return res.status(400).json({ 
-        message: "Duo teams must have exactly 1 additional member (2 total including leader)" 
-      });
-    }
-    
-    if (teamSize === "Team" && (memberCount < 2 || memberCount > 3)) {
-      return res.status(400).json({ 
-        message: "Squad teams must have 2-3 additional members (3-4 total including leader)" 
-      });
-    }
-
-    // Verify all members exist and are not already in teams
-    let memberUserIds = [];
-    if (members && members.length > 0) {
-      // Find users by email AND registrationNumber (both must match)
-      for (const member of members) {
-        const memberUser = await User.findOne({
-          email: member.email,
-          registrationNumber: member.registrationNumber,
-        });
-
-        if (!memberUser) {
-          return res.status(400).json({
-            message: `Member with email ${member.email} and registration number ${member.registrationNumber} not found. Please ensure all members are registered on the platform.`,
-          });
-        }
-
-        memberUserIds.push(memberUser._id);
-      }
-
-      // Check if any member is already in a team
-      const membersInTeams = await Team.find({
-        $or: [
-          { leader: { $in: memberUserIds } },
-          { members: { $in: memberUserIds } },
-        ],
-      });
-
-      if (membersInTeams.length > 0) {
-        return res.status(400).json({ 
-          message: "One or more members are already in a team" 
-        });
-      }
     }
 
     // Generate unique registration number
@@ -117,46 +62,48 @@ router.post("/register", authMiddleware, async (req, res) => {
     const team = new Team({
       teamName,
       leader: req.user._id,
-      members: memberUserIds,
-      problemStatement,
+      members,
       teamSize,
       registrationNumber,
+      paymentStatus: "pending"
     });
 
     await team.save();
 
-    // Populate team data for response
     const populatedTeam = await Team.findById(team._id)
-      .populate("leader", "name email registrationNumber phone university")
-      .populate("members", "name email registrationNumber phone university");
+      .populate("leader", "name email registrationNumber phone university");
+
+    // Send registration confirmation email
+    const emailData = {
+      teamName: team.teamName,
+      registrationNumber: team.registrationNumber,
+      teamSize: team.teamSize,
+      leaderName: populatedTeam.leader.name,
+      leaderEmail: populatedTeam.leader.email,
+      amount: 500, // Solo registration fee
+    };
+
+    // Send email asynchronously (don't wait for it)
+    sendTeamRegistrationEmail(emailData).catch(err => {
+      console.error("Failed to send registration email:", err);
+    });
 
     res.status(201).json({
-      message: "Team registered successfully",
+      message: "Solo registration successful. Confirmation email sent. Please complete payment and upload documents.",
       team: populatedTeam,
     });
   } catch (error) {
     console.error("Team registration error:", error);
-
-    // Handle specific MongoDB errors
-    if (error.name === "ValidationError") {
-      const errors = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({ message: "Validation error", errors });
-    }
-
-    if (error.code === 11000) {
-      return res.status(400).json({ message: "Team name already exists" });
-    }
-
-    res.status(500).json({ message: "Server error during team registration" });
+    res.status(500).json({ message: "Server error during registration" });
   }
 });
 
 // @route   GET /api/teams
-// @desc    Get all teams
+// @desc    Get all verified teams
 // @access  Public
 router.get("/", async (req, res) => {
   try {
-    const teams = await Team.find({ status: "approved" })
+    const teams = await Team.find({ paymentStatus: "verified" })
       .populate("leader", "name email registrationNumber")
       .populate("members", "name email registrationNumber")
       .sort({ createdAt: -1 });
@@ -190,39 +137,24 @@ router.get("/my-team", authMiddleware, async (req, res) => {
   }
 });
 
-// @route   GET /api/teams/problem-statements
-// @desc    Get available problem statements
-// @access  Public
-router.get("/problem-statements", (req, res) => {
-  const problemStatements = [
-    "AI-Powered Learning Management System",
-    "Smart Campus Navigation App",
-    "Sustainable Energy Monitoring Platform",
-    "Mental Health Support Chatbot",
-    "Blockchain-based Certificate Verification",
-    "IoT-based Smart Agriculture Solution",
-    "AR/VR Educational Content Platform",
-    "Cybersecurity Threat Detection System",
-    "Social Impact Measurement Tool",
-    "Digital Healthcare Management System",
-  ];
-
-  res.json({ problemStatements });
-});
-
-// @route   POST /api/teams/upload-payment
-// @desc    Upload payment screenshot for a team
+// @route   POST /api/teams/upload-documents
+// @desc    Upload payment screenshot and ID card
 // @access  Private
 router.post(
-  "/upload-payment",
+  "/upload-documents",
   authMiddleware,
-  upload.single("paymentScreenshot"),
+  upload.fields([
+    { name: "paymentScreenshot", maxCount: 1 },
+    { name: "idCard", maxCount: 1 }
+  ]),
   async (req, res) => {
     try {
       const { teamId } = req.body;
 
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
+      if (!req.files?.paymentScreenshot || !req.files?.idCard) {
+        return res.status(400).json({ 
+          message: "Both payment screenshot and ID card are required" 
+        });
       }
 
       // Find the team and verify ownership
@@ -232,45 +164,74 @@ router.post(
       });
 
       if (!team) {
-        return res.status(404).json({ 
-          message: "Team not found or you are not authorized" 
+        return res.status(404).json({
+          message: "Team not found or you are not authorized",
         });
       }
 
-      // Delete old payment screenshot from Cloudinary if exists
+      // Check if payment was made
+      if (!team.razorpayPaymentId) {
+        return res.status(400).json({
+          message: "Please complete payment first before uploading documents",
+        });
+      }
+
+      // Delete old images from Cloudinary if they exist
       if (team.paymentScreenshotCloudinaryId) {
         await deleteImageFromCloudinary(team.paymentScreenshotCloudinaryId);
       }
+      if (team.idCardCloudinaryId) {
+        await deleteImageFromCloudinary(team.idCardCloudinaryId);
+      }
 
-      // Compress and upload to Cloudinary
-      const uploadResult = await compressAndUploadImage(req.file, teamId);
+      // Upload payment screenshot
+      const paymentUpload = await compressAndUploadImage(
+        req.files.paymentScreenshot[0],
+        `${teamId}_payment`
+      );
 
-      if (!uploadResult.success) {
-        return res.status(500).json({ 
-          message: "Failed to process and upload image" 
+      // Upload ID card
+      const idCardUpload = await compressAndUploadImage(
+        req.files.idCard[0],
+        `${teamId}_idcard`
+      );
+
+      if (!paymentUpload.success || !idCardUpload.success) {
+        return res.status(500).json({
+          message: "Failed to process and upload images",
         });
       }
 
-      // Update team with new payment screenshot details
-      team.paymentScreenshot = uploadResult.url;
-      team.paymentScreenshotCloudinaryId = uploadResult.cloudinaryId;
-      team.paymentStatus = "pending";
+      // Update team with document details
+      team.paymentScreenshot = paymentUpload.url;
+      team.paymentScreenshotCloudinaryId = paymentUpload.cloudinaryId;
+      team.idCard = idCardUpload.url;
+      team.idCardCloudinaryId = idCardUpload.cloudinaryId;
+      team.documentsUploadedAt = new Date();
+      
       await team.save();
 
       res.json({
-        message: "Payment screenshot uploaded and compressed successfully",
+        message: "Documents uploaded successfully. Waiting for admin verification.",
         paymentScreenshot: team.paymentScreenshot,
-        paymentStatus: team.paymentStatus,
+        idCard: team.idCard,
         compressionInfo: {
-          originalSize: uploadResult.originalSize,
-          compressedSize: uploadResult.compressedSize,
-          compressionRatio: uploadResult.compressionRatio + "%",
+          paymentScreenshot: {
+            originalSize: paymentUpload.originalSize,
+            compressedSize: paymentUpload.compressedSize,
+            compressionRatio: paymentUpload.compressionRatio + "%",
+          },
+          idCard: {
+            originalSize: idCardUpload.originalSize,
+            compressedSize: idCardUpload.compressedSize,
+            compressionRatio: idCardUpload.compressionRatio + "%",
+          }
         },
       });
     } catch (error) {
-      console.error("Payment upload error:", error);
+      console.error("Document upload error:", error);
       res.status(500).json({
-        message: "Server error during payment upload",
+        message: "Server error during document upload",
         error: process.env.NODE_ENV === "development" ? error.message : undefined,
       });
     }
