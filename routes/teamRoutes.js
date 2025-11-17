@@ -98,6 +98,46 @@ router.post("/register", authMiddleware, async (req, res) => {
   }
 });
 
+// @route   POST /api/teams/save-transaction
+// @desc    Save transaction ID after manual payment
+// @access  Private
+router.post("/save-transaction", authMiddleware, async (req, res) => {
+  try {
+    const { teamId, transactionId, amount } = req.body;
+
+    if (!transactionId) {
+      return res.status(400).json({ message: "Transaction ID is required" });
+    }
+
+    // Find the team and verify ownership
+    const team = await Team.findOne({
+      _id: teamId,
+      $or: [{ leader: req.user._id }, { members: req.user._id }],
+    });
+
+    if (!team) {
+      return res.status(404).json({
+        message: "Team not found or you are not authorized",
+      });
+    }
+
+    // Save transaction details
+    team.transactionId = transactionId;
+    team.paymentAmount = amount * 100; // Store in paise for consistency
+    team.paymentCompletedAt = new Date();
+    
+    await team.save();
+
+    res.json({
+      message: "Transaction ID saved successfully. Please upload your documents.",
+      transactionId: team.transactionId
+    });
+  } catch (error) {
+    console.error("Save transaction error:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 // @route   GET /api/teams
 // @desc    Get all verified teams
 // @access  Public
@@ -169,10 +209,10 @@ router.post(
         });
       }
 
-      // Check if payment was made
-      if (!team.razorpayPaymentId) {
+      // Check if transaction ID is saved
+      if (!team.transactionId) {
         return res.status(400).json({
-          message: "Please complete payment first before uploading documents",
+          message: "Please complete payment and save transaction ID first",
         });
       }
 

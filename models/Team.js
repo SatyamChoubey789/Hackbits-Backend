@@ -21,23 +21,23 @@ const teamSchema = new mongoose.Schema({
     enum: ['Solo', 'Duo', 'Team'],
     required: true
   },
+  problemStatement: {
+    type: String,
+    // Not required anymore
+  },
   registrationNumber: {
     type: String,
     required: true,
     unique: true
   },
-  // Payment related fields
-  razorpayOrderId: {
-    type: String
-  },
-  razorpayPaymentId: {
-    type: String
-  },
-  razorpaySignature: {
-    type: String
+  // Manual Payment related fields (UPI/QR payment)
+  transactionId: {
+    type: String,
+    // UTR/Transaction ID from UPI payment
   },
   paymentAmount: {
     type: Number
+    // Amount in paise (500 rupees = 50000 paise)
   },
   paymentStatus: {
     type: String,
@@ -46,9 +46,11 @@ const teamSchema = new mongoose.Schema({
   },
   paymentCompletedAt: {
     type: Date
+    // When user submitted transaction ID
   },
   paymentVerifiedAt: {
     type: Date
+    // When admin verified the payment
   },
   // Document upload fields
   paymentScreenshot: {
@@ -66,49 +68,24 @@ const teamSchema = new mongoose.Schema({
   documentsUploadedAt: {
     type: Date
   },
-  // QR Code
+  // QR Code for event entry
   qrCode: {
-    type: String  // Data URL
+    type: String  // Data URL - generated after admin verification
   },
   // Verification
   verifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Admin'
   },
+  rejectionReason: {
+    type: String
+    // Reason if payment/verification is rejected
+  },
   status: {
     type: String,
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
-  },checkedIn: {
-    type: Boolean,
-    default: false
-  },
-  checkInTime: {
-    type: Date
-  },
-  checkedInBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Admin'
-  },
-  checkInCount: {
-    type: Number,
-    default: 0
-  },
-  checkInHistory: [{
-    timestamp: {
-      type: Date,
-      default: Date.now
-    },
-    checkedInBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Admin'
-    },
-    method: {
-      type: String,
-      enum: ['qr_scan', 'manual_entry'],
-      default: 'qr_scan'
-    }
-  }]
+  }
 }, {
   timestamps: true
 });
@@ -118,6 +95,7 @@ teamSchema.index({ leader: 1 });
 teamSchema.index({ members: 1 });
 teamSchema.index({ registrationNumber: 1 });
 teamSchema.index({ paymentStatus: 1 });
+teamSchema.index({ transactionId: 1 });
 
 const Team = mongoose.model('Team', teamSchema);
 
