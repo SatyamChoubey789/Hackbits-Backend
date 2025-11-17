@@ -18,7 +18,7 @@ const teamSchema = new mongoose.Schema({
   }],
   teamSize: {
     type: String,
-    enum: ['Solo', 'Duo', 'Team'],
+    enum: ['Solo'],
     required: true
   },
   problemStatement: {

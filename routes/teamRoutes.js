@@ -80,7 +80,7 @@ router.post("/register", authMiddleware, async (req, res) => {
       teamSize: team.teamSize,
       leaderName: populatedTeam.leader.name,
       leaderEmail: populatedTeam.leader.email,
-      amount: 500, // Solo registration fee
+      amount: 79, // Solo registration fee
     };
 
     // Send email asynchronously (don't wait for it)

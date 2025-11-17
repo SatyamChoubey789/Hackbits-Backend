@@ -161,10 +161,10 @@ router.put('/teams/:teamId/payment-status', adminAuthMiddleware, async (req, res
         ...ticketData,
         teamSize: team.teamSize,
         qrCode: ticketQRCode,
-        eventDate: process.env.EVENT_DATE || 'January 15-16, 2025',
-        eventTime: process.env.EVENT_TIME || '9:00 AM - 6:00 PM',
-        venue: process.env.EVENT_VENUE || 'College Auditorium',
-        reportingTime: process.env.REPORTING_TIME || '8:30 AM',
+        eventDate: process.env.EVENT_DATE || 'November 26-27, 2025',
+        //eventTime: process.env.EVENT_TIME || '9:00 AM - 6:00 PM',
+        venue: process.env.EVENT_VENUE || 'Block 34, room 213',
+        //reportingTime: process.env.REPORTING_TIME || '8:30 AM',
       });
 
       team.ticketQRCode = ticketQRCode;
