@@ -23,21 +23,19 @@ const teamSchema = new mongoose.Schema({
   },
   problemStatement: {
     type: String,
-    // Not required anymore
   },
   registrationNumber: {
     type: String,
     required: true,
     unique: true
   },
-  // Manual Payment related fields (UPI/QR payment)
+  // Payment related fields
   transactionId: {
     type: String,
-    // UTR/Transaction ID from UPI payment
+    // Payment ID from Razorpay or UPI transaction ID
   },
   paymentAmount: {
     type: Number
-    // Amount in paise (500 rupees = 50000 paise)
   },
   paymentStatus: {
     type: String,
@@ -46,11 +44,9 @@ const teamSchema = new mongoose.Schema({
   },
   paymentCompletedAt: {
     type: Date
-    // When user submitted transaction ID
   },
   paymentVerifiedAt: {
     type: Date
-    // When admin verified the payment
   },
   // Document upload fields
   paymentScreenshot: {
@@ -68,9 +64,32 @@ const teamSchema = new mongoose.Schema({
   documentsUploadedAt: {
     type: Date
   },
-  // QR Code for event entry
-  qrCode: {
-    type: String  // Data URL - generated after admin verification
+  // Ticket fields (replaces QR code)
+  ticketNumber: {
+    type: String,
+    unique: true,
+    sparse: true,
+    // Format: HACK2025-001
+  },
+  ticketQRCode: {
+    type: String
+    // Small QR code for ticket (optional backup)
+  },
+  ticketHTML: {
+    type: String
+    // Full HTML ticket for viewing/printing
+  },
+  // Check-in fields
+  checkedIn: {
+    type: Boolean,
+    default: false
+  },
+  checkinTime: {
+    type: Date
+  },
+  checkinBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Admin'
   },
   // Verification
   verifiedBy: {
@@ -79,7 +98,6 @@ const teamSchema = new mongoose.Schema({
   },
   rejectionReason: {
     type: String
-    // Reason if payment/verification is rejected
   },
   status: {
     type: String,
@@ -96,6 +114,8 @@ teamSchema.index({ members: 1 });
 teamSchema.index({ registrationNumber: 1 });
 teamSchema.index({ paymentStatus: 1 });
 teamSchema.index({ transactionId: 1 });
+teamSchema.index({ ticketNumber: 1 });
+teamSchema.index({ checkedIn: 1 });
 
 const Team = mongoose.model('Team', teamSchema);
 

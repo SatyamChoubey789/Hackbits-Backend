@@ -1,6 +1,5 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const QRCode = require('qrcode');
 const Admin = require('../models/Admin');
 const Team = require('../models/Team');
 const User = require('../models/User');
@@ -8,6 +7,11 @@ const {
   sendVerificationSuccessEmail, 
   sendVerificationRejectedEmail 
 } = require('../utils/emailService');
+const {
+  generateTicketNumber,
+  generateTicketQRData,
+  generateTicketHTML,
+} = require('../utils/ticketGenerator');
 
 const router = express.Router();
 
@@ -97,7 +101,7 @@ router.get('/teams', adminAuthMiddleware, async (req, res) => {
 });
 
 // @route   PUT /api/admin/teams/:teamId/payment-status
-// @desc    Update team payment status, generate QR, and send email
+// @desc    Update payment status and generate ticket
 // @access  Private (Admin only)
 router.put('/teams/:teamId/payment-status', adminAuthMiddleware, async (req, res) => {
   try {
@@ -124,7 +128,7 @@ router.put('/teams/:teamId/payment-status', adminAuthMiddleware, async (req, res
     }
 
     // Check if payment is completed
-    if (paymentStatus === 'verified' && !team.razorpayPaymentId) {
+    if (paymentStatus === 'verified' && !team.transactionId) {
       return res.status(400).json({ 
         message: 'Cannot verify team. Payment not completed yet.' 
       });
@@ -133,63 +137,56 @@ router.put('/teams/:teamId/payment-status', adminAuthMiddleware, async (req, res
     const previousStatus = team.paymentStatus;
     team.paymentStatus = paymentStatus;
 
-    // If verified, generate QR code
+    // If verified, generate ticket
     if (paymentStatus === 'verified') {
-      // Generate QR Code data
-      const qrData = {
+      // Generate ticket number if not exists
+      if (!team.ticketNumber) {
+        const teamCount = await Team.countDocuments();
+        team.ticketNumber = generateTicketNumber(teamCount + 1);
+      }
+
+      // Generate ticket QR code
+      const ticketData = {
+        ticketNumber: team.ticketNumber,
         teamName: team.teamName,
         registrationNumber: team.registrationNumber,
-        teamSize: team.teamSize,
-        leader: {
-          name: team.leader.name,
-          email: team.leader.email,
-          registrationNumber: team.leader.registrationNumber,
-          phone: team.leader.phone,
-          university: team.leader.university
-        },
-        members: team.members.map((member) => ({
-          name: member.name,
-          email: member.email,
-          registrationNumber: member.registrationNumber,
-          phone: member.phone,
-          university: member.university
-        })),
-        paymentId: team.razorpayPaymentId,
-        amount: team.paymentAmount ? team.paymentAmount / 100 : 0,
+        leaderName: team.leader.name,
         verifiedAt: new Date().toISOString(),
-        verifiedBy: req.admin.username
       };
 
-      // Generate QR code as data URL
-      const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
-        errorCorrectionLevel: 'H',
-        type: 'image/png',
-        quality: 0.95,
-        margin: 1,
-        width: 400,
-        color: {
-          dark: '#000000',
-          light: '#FFFFFF',
-        },
+      const ticketQRCode = await generateTicketQRData(ticketData);
+
+      // Generate full ticket HTML
+      const ticketHTML = generateTicketHTML({
+        ...ticketData,
+        teamSize: team.teamSize,
+        qrCode: ticketQRCode,
+        eventDate: process.env.EVENT_DATE || 'January 15-16, 2025',
+        eventTime: process.env.EVENT_TIME || '9:00 AM - 6:00 PM',
+        venue: process.env.EVENT_VENUE || 'College Auditorium',
+        reportingTime: process.env.REPORTING_TIME || '8:30 AM',
       });
 
-      team.qrCode = qrCodeDataUrl;
+      team.ticketQRCode = ticketQRCode;
+      team.ticketHTML = ticketHTML;
       team.paymentVerifiedAt = new Date();
       team.verifiedBy = req.admin._id;
+      team.checkedIn = false; // Initialize check-in status
 
       await team.save();
 
-      // Send verification success email with QR code
+      // Send verification success email with ticket
       const emailData = {
         teamName: team.teamName,
         registrationNumber: team.registrationNumber,
         teamSize: team.teamSize,
         leaderName: team.leader.name,
         leaderEmail: team.leader.email,
-        paymentId: team.razorpayPaymentId,
+        paymentId: team.transactionId,
         amount: team.paymentAmount ? team.paymentAmount / 100 : 0,
         verifiedAt: team.paymentVerifiedAt,
-        qrCode: qrCodeDataUrl,
+        ticketNumber: team.ticketNumber,
+        ticketQRCode: ticketQRCode,
         members: team.members
       };
 
@@ -199,10 +196,13 @@ router.put('/teams/:teamId/payment-status', adminAuthMiddleware, async (req, res
       });
 
     } else if (paymentStatus === 'rejected') {
-      // Clear QR code if rejected
-      team.qrCode = null;
+      // Clear ticket if rejected
+      team.ticketNumber = null;
+      team.ticketQRCode = null;
+      team.ticketHTML = null;
       team.paymentVerifiedAt = null;
       team.verifiedBy = null;
+      team.rejectionReason = rejectionReason;
 
       await team.save();
 
@@ -230,7 +230,7 @@ router.put('/teams/:teamId/payment-status', adminAuthMiddleware, async (req, res
       .populate('members', 'name email registrationNumber phone university');
 
     const message = paymentStatus === 'verified' 
-      ? 'Payment verified, QR code generated, and confirmation email sent'
+      ? 'Payment verified, ticket generated, and confirmation email sent'
       : paymentStatus === 'rejected'
       ? 'Payment rejected and notification email sent'
       : 'Status updated to pending';
@@ -241,6 +241,74 @@ router.put('/teams/:teamId/payment-status', adminAuthMiddleware, async (req, res
     });
   } catch (error) {
     console.error('Update payment status error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   PUT /api/admin/teams/:teamId/checkin
+// @desc    Check-in/Check-out team at venue
+// @access  Private (Admin only)
+router.put('/teams/:teamId/checkin', adminAuthMiddleware, async (req, res) => {
+  try {
+    const { teamId } = req.params;
+    const { checkedIn, checkinTime } = req.body;
+
+    const team = await Team.findById(teamId)
+      .populate('leader', 'name email registrationNumber')
+      .populate('members', 'name email registrationNumber');
+
+    if (!team) {
+      return res.status(404).json({ message: 'Team not found' });
+    }
+
+    if (team.paymentStatus !== 'verified') {
+      return res.status(400).json({ 
+        message: 'Cannot check-in unverified team' 
+      });
+    }
+
+    team.checkedIn = checkedIn;
+    team.checkinTime = checkinTime || new Date();
+    team.checkinBy = req.admin._id;
+
+    await team.save();
+
+    const updatedTeam = await Team.findById(team._id)
+      .populate('leader', 'name email registrationNumber')
+      .populate('members', 'name email registrationNumber');
+
+    res.json({
+      message: checkedIn ? 'Team checked in successfully' : 'Check-in status updated',
+      team: updatedTeam
+    });
+  } catch (error) {
+    console.error('Check-in error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   GET /api/admin/checkin-stats
+// @desc    Get check-in statistics
+// @access  Private (Admin only)
+router.get('/checkin-stats', adminAuthMiddleware, async (req, res) => {
+  try {
+    const totalVerified = await Team.countDocuments({ paymentStatus: 'verified' });
+    const checkedIn = await Team.countDocuments({ 
+      paymentStatus: 'verified', 
+      checkedIn: true 
+    });
+    const notCheckedIn = totalVerified - checkedIn;
+
+    res.json({
+      stats: {
+        totalVerified,
+        checkedIn,
+        notCheckedIn,
+        checkinRate: totalVerified > 0 ? ((checkedIn / totalVerified) * 100).toFixed(1) : 0
+      }
+    });
+  } catch (error) {
+    console.error('Get checkin stats error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -290,11 +358,12 @@ router.get('/stats', adminAuthMiddleware, async (req, res) => {
     const pendingPayments = await Team.countDocuments({ paymentStatus: 'pending' });
     const rejectedPayments = await Team.countDocuments({ paymentStatus: 'rejected' });
     const totalUsers = await User.countDocuments();
-    const paymentsCompleted = await Team.countDocuments({ razorpayPaymentId: { $exists: true, $ne: null } });
+    const paymentsCompleted = await Team.countDocuments({ transactionId: { $exists: true, $ne: null } });
     const documentsUploaded = await Team.countDocuments({ 
       paymentScreenshot: { $exists: true, $ne: null },
       idCard: { $exists: true, $ne: null }
     });
+    const checkedIn = await Team.countDocuments({ checkedIn: true });
 
     res.json({
       stats: {
@@ -305,7 +374,9 @@ router.get('/stats', adminAuthMiddleware, async (req, res) => {
         totalUsers,
         paymentsCompleted,
         documentsUploaded,
-        paymentVerificationRate: totalTeams > 0 ? ((verifiedPayments / totalTeams) * 100).toFixed(1) : 0
+        checkedIn,
+        paymentVerificationRate: totalTeams > 0 ? ((verifiedPayments / totalTeams) * 100).toFixed(1) : 0,
+        checkinRate: verifiedPayments > 0 ? ((checkedIn / verifiedPayments) * 100).toFixed(1) : 0
       }
     });
   } catch (error) {
