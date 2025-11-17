@@ -68,7 +68,7 @@ const emailTemplates = {
               <div class="step">Upload payment screenshot</div>
               <div class="step">Upload your college ID card</div>
               <div class="step">Wait for admin verification</div>
-              <div class="step">Receive your QR code via email</div>
+              <div class="step">Receive your ticket via email</div>
             </div>
 
             <center>
@@ -94,9 +94,9 @@ const emailTemplates = {
     `,
   }),
 
-  // Payment success and verification email with QR code
+  // Payment success and verification email with TICKET
   verificationSuccess: (teamData) => ({
-    subject: '✅ Payment Verified - Your Hackathon QR Code',
+    subject: '✅ Payment Verified - Your Hackathon Ticket 🎫',
     html: `
       <!DOCTYPE html>
       <html>
@@ -110,12 +110,13 @@ const emailTemplates = {
           .info-box { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #38ef7d; }
           .info-item { margin: 10px 0; }
           .label { font-weight: bold; color: #11998e; }
-          .qr-container { text-align: center; background: white; padding: 30px; margin: 30px 0; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-          .qr-code { max-width: 300px; height: auto; border: 5px solid #11998e; border-radius: 10px; }
+          .ticket-container { text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; margin: 30px 0; border-radius: 15px; color: white; }
+          .ticket-number { font-size: 32px; font-weight: bold; letter-spacing: 3px; font-family: 'Courier New', monospace; margin: 20px 0; padding: 15px; background: rgba(255,255,255,0.2); border-radius: 10px; }
           .important-box { background: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107; margin: 20px 0; }
           .instructions { background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; }
           .instruction-item { margin: 10px 0; padding-left: 25px; position: relative; }
           .instruction-item:before { content: "→"; position: absolute; left: 0; color: #11998e; font-weight: bold; }
+          .button { display: inline-block; padding: 12px 30px; background: white; color: #667eea; text-decoration: none; border-radius: 5px; margin: 20px 0; font-weight: bold; }
           .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
         </style>
       </head>
@@ -156,28 +157,36 @@ const emailTemplates = {
               </div>
             </div>
 
-            <div class="qr-container">
-              <h3 style="color: #11998e; margin-top: 0;">Your Event Entry QR Code</h3>
-              <img src="cid:qrcode" alt="Team QR Code" class="qr-code" />
-              <p style="margin-top: 20px; color: #666;">Save this QR code for event entry</p>
+            <div class="ticket-container">
+              <div style="font-size: 48px; margin-bottom: 10px;">🎫</div>
+              <h2 style="margin: 10px 0;">Your Digital Ticket</h2>
+              <div class="ticket-number">${teamData.ticketNumber || 'HACK2025-XXX'}</div>
+              <p style="font-size: 14px; opacity: 0.9; margin-top: 10px;">Show this ticket number at the venue</p>
+              <center>
+                <a href="${process.env.FRONTEND_URL}/team-details" class="button">
+                  View Full Ticket
+                </a>
+              </center>
             </div>
 
             <div class="important-box">
               <h3 style="margin-top: 0; color: #856404;">⚠️ Important Instructions</h3>
               <ul style="margin: 10px 0; padding-left: 20px;">
-                <li><strong>Save this QR code</strong> - Download the attached image</li>
+                <li><strong>Save your ticket</strong> - Click the button above to view and download</li>
                 <li><strong>Print it out</strong> - Keep a physical copy as backup</li>
-                <li><strong>Don't share</strong> - This QR code is unique to your team</li>
-                <li><strong>Bring to event</strong> - Present it at the registration desk</li>
+                <li><strong>Bring to venue</strong> - Show ticket number or QR code at entry</li>
+                <li><strong>Bring valid ID</strong> - College ID card required for verification</li>
+                <li><strong>Non-transferable</strong> - This ticket is unique to your team</li>
               </ul>
             </div>
 
             <div class="instructions">
-              <h3 style="margin-top: 0; color: #0277bd;">📱 How to Use Your QR Code</h3>
-              <div class="instruction-item">Download the attached QR code image</div>
+              <h3 style="margin-top: 0; color: #0277bd;">📱 How to Use Your Ticket</h3>
+              <div class="instruction-item">Login to your dashboard and view your ticket</div>
+              <div class="instruction-item">Download or save screenshot of the ticket</div>
               <div class="instruction-item">Keep it on your phone for easy access</div>
-              <div class="instruction-item">Present it at the event registration desk</div>
-              <div class="instruction-item">Our team will scan it for instant check-in</div>
+              <div class="instruction-item">Present ticket number at the venue entry</div>
+              <div class="instruction-item">Our team will check you in instantly</div>
             </div>
 
             ${teamData.members && teamData.members.length > 0 ? `
@@ -194,6 +203,15 @@ const emailTemplates = {
               </div>
             ` : ''}
 
+            <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 2px solid #667eea;">
+              <h3 style="margin-top: 0; color: #667eea;">📍 Event Information</h3>
+              <p style="margin: 5px 0;"><strong>Date:</strong> ${teamData.eventDate || 'To be announced'}</p>
+              <!-- <p style="margin: 5px 0;"><strong>Time:</strong> ${teamData.eventTime || 'To be announced'}</p> -->
+              <p style="margin: 5px 0;"><strong>Venue:</strong> ${teamData.venue || 'To be announced'}</p>
+              <!-- <p style="margin: 5px 0;"><strong>Reporting Time:</strong> ${teamData.reportingTime || 'To be announced'}</p> -->
+              <p style="margin-top: 15px; font-size: 12px; color: #666;">*Event timing details will be shared soon</p>
+            </div>
+
             <p style="margin-top: 30px;">We're excited to see you at the hackathon! Get ready to innovate, collaborate, and create something amazing.</p>
             
             <p>Best regards,<br><strong>Hackathon Team</strong></p>
@@ -207,13 +225,6 @@ const emailTemplates = {
       </body>
       </html>
     `,
-    // Add attachments array for QR code
-    attachments: teamData.qrCode ? [{
-      filename: `QR-${teamData.registrationNumber}.png`,
-      content: teamData.qrCode.split('base64,')[1],
-      encoding: 'base64',
-      cid: 'qrcode' // Content-ID for inline image
-    }] : []
   }),
 
   // Payment rejection email
@@ -257,6 +268,7 @@ const emailTemplates = {
             <ul>
               <li>Review your payment screenshot for clarity</li>
               <li>Ensure your college ID card is clearly visible</li>
+              <li>Verify payment ID is correct</li>
               <li>Re-upload the documents if necessary</li>
               <li>Contact support if you need assistance</li>
             </ul>
@@ -294,7 +306,7 @@ const sendEmail = async (to, template, data) => {
       html: emailContent.html,
     };
 
-    // Add attachments if present (for QR code)
+    // Add attachments if present
     if (emailContent.attachments) {
       mailOptions.attachments = emailContent.attachments;
     }
